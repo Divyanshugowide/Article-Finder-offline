@@ -1,0 +1,23 @@
+# Python/venv
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+
+# Data (do not publish PDFs or derived indices)
+data/raw_pdfs/
+data/processed/
+data/idx/
+
+# Local models cache
+models/
+models_cache/
+
+# Generated docs outputs (optional)
+# docs/*.pdf
+
+# OS
+*.DS_Store
+Thumbs.db
