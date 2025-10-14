@@ -16,7 +16,9 @@ FAISS_PATH = os.getenv("FAISS_PATH", "data/idx/mE5.faiss")
 META_PATH = os.getenv("META_PATH", "data/idx/meta.json")
 MODEL_NAME = os.getenv("MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
 
-retriever = Retriever(BM25_PATH, FAISS_PATH, META_PATH, MODEL_NAME)
+# retriever = Retriever(BM25_PATH, FAISS_PATH, META_PATH, MODEL_NAME)
+retriever = Retriever(BM25_PATH, FAISS_PATH, META_PATH)
+
 
 @app.get("/health")
 def health():
@@ -30,6 +32,8 @@ from fastapi.responses import HTMLResponse
 
 from fastapi.responses import HTMLResponse
 import time
+
+
 
 @app.get("/", response_class=HTMLResponse)
 def home():

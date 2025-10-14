@@ -1,14 +1,19 @@
 # Article Finder — Official Project Documentation
 
-Author: Divya  
+Author: Divyanshu  
 Date: 2025-10-08  
 Version: 1.0
 
 Abstract
-Article Finder is an offline-first document search system that indexes local PDF documents, builds both lexical (BM25) and semantic (FAISS) indices, and serves an HTTP API with role-based access control (RBAC). The project targets constrained or disconnected environments where internet access is partial or unavailable. This document presents the problem statement, objectives, approach and methodology, architecture, implementation details, build/run instructions, testing and validation procedures, security considerations, limitations, and future work.
+Article Finder is an offline-first document search system that indexes local PDF documents, builds both lexical (BM25) and semantic (FAISS) indices, and serves an HTTP API with role-based access control (RBAC). 
+The project targets constrained or disconnected environments where internet access is partial or unavailable. This document presents the problem statement, objectives, approach and methodology, architecture, implementation details, build/run instructions, testing and validation procedures, security considerations, limitations, and future work.
 
 1. Introduction
-Modern teams often need to search across policy, legal, and technical PDFs without relying on cloud services. Article Finder addresses this by: (1) extracting structured chunks from PDFs, (2) indexing content using a hybrid approach, and (3) serving an API and simple web UI for users with different roles. The system emphasizes privacy, portability, and offline usability.
+Modern teams often need to search across policy, legal, and technical PDFs without relying on cloud services.
+ Article Finder addresses this by:
+  (1) extracting structured chunks from PDFs, 
+  (2) indexing content using a hybrid approach, and 
+  (3) serving an API and simple web UI for users with different roles. The system emphasizes privacy, portability, and offline usability.
 
 2. Objectives
 - Provide an offline-capable search engine for local PDFs.
