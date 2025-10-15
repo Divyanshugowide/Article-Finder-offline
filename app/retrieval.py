@@ -1,4 +1,176 @@
-# import os
+import os
+import re
+import json
+import pickle
+import numpy as np
+import faiss
+from rank_bm25 import BM25Okapi
+from sentence_transformers import SentenceTransformer
+from app.normalize import normalize_text
+
+
+class Retriever:
+    def __init__(self, bm25_path, faiss_path, meta_path, alpha=0.4):
+        """
+        🧠 Universal Hybrid Retriever
+        Works across all kinds of PDFs — legal, technical, research, etc.
+        Combines:
+          - BM25 (keyword relevance)
+          - FAISS (semantic similarity)
+        alpha → blend weight between both (0.4 = balanced)
+        """
+        self.alpha = alpha
+        self.faiss_topk = 50
+        self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+
+        print("⚙️ Initializing Universal Hybrid Retriever (BM25 + FAISS)...")
+
+        # --- Load embedding model ---
+        if not os.path.exists(self.model_name):
+            print(f"[WARN] Model '{self.model_name}' not found locally — downloading online.")
+        self.model = SentenceTransformer(self.model_name)
+
+        # --- Load BM25 index ---
+        with open(bm25_path, "rb") as f:
+            bm25_obj = pickle.load(f)
+        self.bm25 = bm25_obj["bm25"]
+        self.meta = bm25_obj["meta"]
+
+        # --- Load FAISS index ---
+        self.index = faiss.read_index(faiss_path)
+
+        # --- Load metadata ---
+        with open(meta_path, "r", encoding="utf-8") as f:
+            self.meta_json = json.load(f)
+
+    # ----------------------------------------------------------------------
+    def _normalize_scores(self, scores):
+        """Normalize score array safely to [0,1] range."""
+        scores = np.array(scores)
+        if len(scores) == 0 or scores.max() == scores.min():
+            return np.zeros_like(scores)
+        return (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
+
+    # ----------------------------------------------------------------------
+    def search(self, query, roles, topk=5):
+        """
+        Perform hybrid semantic-keyword retrieval with fallback and RBAC.
+        - Works on both structured (Article-based) and unstructured (page-based) PDFs.
+        - Ensures semantic recall + keyword precision.
+        """
+        q_norm = normalize_text(query)
+        tokens = q_norm.split()
+        query_lower = query.lower().strip()
+
+        # --- BM25 keyword scoring ---
+        bm25_scores = np.array(self.bm25.get_scores(tokens))
+
+        # --- Semantic (FAISS) scoring ---
+        q_emb = self.model.encode([q_norm], convert_to_numpy=True, normalize_embeddings=True)
+        D, I = self.index.search(q_emb.astype("float32"), self.faiss_topk)
+
+        vec_scores = np.zeros(len(self.meta_json))
+        for idx, score in zip(I[0], D[0]):
+            vec_scores[idx] = score
+
+        # --- Combine both (balanced fusion) ---
+        bm25_norm = self._normalize_scores(bm25_scores)
+        vec_norm = self._normalize_scores(vec_scores)
+        fused = self.alpha * vec_norm + (1 - self.alpha) * bm25_norm
+
+        # --- Context-aware boosting for legal/technical terms ---
+        important_terms = ["criminal", "penalty", "inspection", "violation", "fine",
+                           "offence", "law", "license", "compliance", "safety", "data", "algorithm"]
+        for i, chunk in enumerate(self.meta_json):
+            for term in important_terms:
+                if term in chunk["norm_text"]:
+                    fused[i] += 0.1
+            if query_lower in chunk["norm_text"]:
+                fused[i] += 0.25  # literal boost
+
+        # --- Rank descending by final score ---
+        ranked_idx = np.argsort(-fused)
+        results = []
+
+        for i in ranked_idx:
+            chunk = self.meta_json[i]
+            chunk_roles = chunk.get("roles", self._assign_roles_from_filename(chunk.get("doc_id", "")))
+
+            # RBAC (Role-Based Access Control)
+            if not set(roles).intersection(set(chunk_roles)):
+                continue
+
+            # Skip very weak matches
+            if fused[i] < 0.05:
+                continue
+
+            # Highlight matches
+            excerpt = self._highlight_keywords(chunk["text"][:700], tokens)
+
+            results.append({
+                "doc_id": chunk["doc_id"],
+                "article_no": chunk.get("article_no", "Unknown"),
+                "page_start": chunk.get("page_start", 1),
+                "page_end": chunk.get("page_end", 1),
+                "score": round(float(fused[i]), 3),
+                "roles": chunk_roles,
+                "excerpt": excerpt
+            })
+
+            if len(results) >= topk:
+                break
+
+        # --- Fallback if no result found ---
+        if not results:
+            print("⚠️ No strong hybrid result — falling back to keyword search.")
+            for i in np.argsort(-bm25_norm)[:topk]:
+                chunk = self.meta_json[i]
+                if not set(roles).intersection(set(chunk.get("roles", []))):
+                    continue
+                excerpt = self._highlight_keywords(chunk["text"][:700], tokens)
+                results.append({
+                    "doc_id": chunk["doc_id"],
+                    "article_no": chunk.get("article_no", "Unknown"),
+                    "page_start": chunk.get("page_start", 1),
+                    "page_end": chunk.get("page_end", 1),
+                    "score": round(float(bm25_norm[i]), 3),
+                    "roles": chunk.get("roles", []),
+                    "excerpt": excerpt
+                })
+
+        # --- Return best answer + all results ---
+        return {
+            "answer": results[0]["excerpt"] if results else "❌ No relevant section found.",
+            "results": results
+        }
+
+    # ----------------------------------------------------------------------
+    def _highlight_keywords(self, text, tokens):
+        """Highlight all query tokens in yellow (for frontend readability)."""
+        for tok in tokens:
+            if not tok.strip():
+                continue
+            pattern = re.compile(re.escape(tok), re.IGNORECASE)
+            text = pattern.sub(
+                lambda m: f"<mark style='background:yellow;font-weight:bold;'>{m.group(0)}</mark>",
+                text
+            )
+        return text
+
+    # ----------------------------------------------------------------------
+    def _assign_roles_from_filename(self, filename: str):
+        """Assign roles dynamically from filename."""
+        if not filename:
+            return ["staff", "legal", "admin"]
+        if "restricted" in filename.lower():
+            return ["legal", "admin"]
+        return ["staff", "legal", "admin"]
+
+
+#my first version
+
+
+#  import os
 # import re
 # import json
 # import pickle
@@ -322,161 +494,162 @@
 #         return ["staff", "legal", "admin"]
 
 
-import os
-import re
-import json
-import pickle
-import numpy as np
-import faiss
-from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
-from app.normalize import normalize_text
+# myy second version
+# import os
+# import re
+# import json
+# import pickle
+# import numpy as np
+# import faiss
+# from rank_bm25 import BM25Okapi
+# from sentence_transformers import SentenceTransformer
+# from app.normalize import normalize_text
 
 
-class Retriever:
-    def __init__(self, bm25_path, faiss_path, meta_path, alpha=0.5):
-        """
-        ⚖️ Improved Stable Mode — Balanced hybrid retrieval.
-        Fixes previous issue where semantic dominance caused wrong matches.
-        alpha -> blend weight between FAISS (semantic) and BM25 (keyword)
-        Lower alpha = stronger keyword influence.
-        """
-        self.alpha = alpha
-        self.faiss_topk = 50
-        self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+# class Retriever:
+#     def __init__(self, bm25_path, faiss_path, meta_path, alpha=0.5):
+#         """
+#         ⚖️ Improved Stable Mode — Balanced hybrid retrieval.
+#         Fixes previous issue where semantic dominance caused wrong matches.
+#         alpha -> blend weight between FAISS (semantic) and BM25 (keyword)
+#         Lower alpha = stronger keyword influence.
+#         """
+#         self.alpha = alpha
+#         self.faiss_topk = 50
+#         self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
 
-        print("⚖️ Running Improved STABLE Hybrid Mode (Balanced + Keyword Aware)")
+#         print("⚖️ Running Improved STABLE Hybrid Mode (Balanced + Keyword Aware)")
 
-        # Load sentence transformer
-        if not os.path.exists(self.model_name):
-            print(f"[WARN] Model '{self.model_name}' not found locally — using default online model.")
-        self.model = SentenceTransformer(self.model_name)
+#         # Load sentence transformer
+#         if not os.path.exists(self.model_name):
+#             print(f"[WARN] Model '{self.model_name}' not found locally — using default online model.")
+#         self.model = SentenceTransformer(self.model_name)
 
-        # Load BM25
-        with open(bm25_path, "rb") as f:
-            bm25_obj = pickle.load(f)
-        self.bm25 = bm25_obj["bm25"]
-        self.meta = bm25_obj["meta"]
+#         # Load BM25
+#         with open(bm25_path, "rb") as f:
+#             bm25_obj = pickle.load(f)
+#         self.bm25 = bm25_obj["bm25"]
+#         self.meta = bm25_obj["meta"]
 
-        # Load FAISS index
-        self.index = faiss.read_index(faiss_path)
+#         # Load FAISS index
+#         self.index = faiss.read_index(faiss_path)
 
-        # Load metadata
-        with open(meta_path, "r", encoding="utf-8") as f:
-            self.meta_json = json.load(f)
+#         # Load metadata
+#         with open(meta_path, "r", encoding="utf-8") as f:
+#             self.meta_json = json.load(f)
 
-    # ------------------------------------------------------------------
-    def _normalize_scores(self, scores):
-        """Normalize array to [0,1] safely."""
-        scores = np.array(scores)
-        if len(scores) == 0 or scores.max() == scores.min():
-            return np.zeros_like(scores)
-        return (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
+#     # ------------------------------------------------------------------
+#     def _normalize_scores(self, scores):
+#         """Normalize array to [0,1] safely."""
+#         scores = np.array(scores)
+#         if len(scores) == 0 or scores.max() == scores.min():
+#             return np.zeros_like(scores)
+#         return (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
 
-    # ------------------------------------------------------------------
-    def search(self, query, roles, topk=5):
-        """Perform balanced hybrid retrieval with role filtering and keyword boosting."""
-        q_norm = normalize_text(query)
-        tokens = q_norm.split()
-        query_lower = query.lower().strip()
+#     # ------------------------------------------------------------------
+#     def search(self, query, roles, topk=5):
+#         """Perform balanced hybrid retrieval with role filtering and keyword boosting."""
+#         q_norm = normalize_text(query)
+#         tokens = q_norm.split()
+#         query_lower = query.lower().strip()
 
-        # --- BM25 keyword scoring ---
-        bm25_scores = np.array(self.bm25.get_scores(tokens))
+#         # --- BM25 keyword scoring ---
+#         bm25_scores = np.array(self.bm25.get_scores(tokens))
 
-        # --- FAISS semantic scoring ---
-        q_emb = self.model.encode([q_norm], convert_to_numpy=True, normalize_embeddings=True)
-        D, I = self.index.search(q_emb.astype("float32"), self.faiss_topk)
-        vec_scores = np.zeros(len(self.meta_json))
-        for idx, score in zip(I[0], D[0]):
-            vec_scores[idx] = score
+#         # --- FAISS semantic scoring ---
+#         q_emb = self.model.encode([q_norm], convert_to_numpy=True, normalize_embeddings=True)
+#         D, I = self.index.search(q_emb.astype("float32"), self.faiss_topk)
+#         vec_scores = np.zeros(len(self.meta_json))
+#         for idx, score in zip(I[0], D[0]):
+#             vec_scores[idx] = score
 
-        # --- Normalize both ---
-        bm25_norm = self._normalize_scores(bm25_scores)
-        vec_norm = self._normalize_scores(vec_scores)
+#         # --- Normalize both ---
+#         bm25_norm = self._normalize_scores(bm25_scores)
+#         vec_norm = self._normalize_scores(vec_scores)
 
-        # --- Blend scores (Balanced Hybrid) ---
-        fused = self.alpha * vec_norm + (1 - self.alpha) * bm25_norm
+#         # --- Blend scores (Balanced Hybrid) ---
+#         fused = self.alpha * vec_norm + (1 - self.alpha) * bm25_norm
 
-        # --- Extra boost for strong legal keywords ---
-        important_keywords = ["criminal", "penalty", "inspection", "violation", "fine", "offence", "law", "license"]
-        for i, chunk in enumerate(self.meta_json):
-            for word in important_keywords:
-                if word in chunk["norm_text"]:
-                    fused[i] += 0.15  # boost relevant legal terms
-            if query_lower in chunk["norm_text"]:
-                fused[i] += 0.25  # strong literal match boost
+#         # --- Extra boost for strong legal keywords ---
+#         important_keywords = ["criminal", "penalty", "inspection", "violation", "fine", "offence", "law", "license"]
+#         for i, chunk in enumerate(self.meta_json):
+#             for word in important_keywords:
+#                 if word in chunk["norm_text"]:
+#                     fused[i] += 0.15  # boost relevant legal terms
+#             if query_lower in chunk["norm_text"]:
+#                 fused[i] += 0.25  # strong literal match boost
 
-        # --- Rank descending ---
-        ranked_idx = np.argsort(-fused)
-        results = []
+#         # --- Rank descending ---
+#         ranked_idx = np.argsort(-fused)
+#         results = []
 
-        for i in ranked_idx:
-            chunk = self.meta_json[i]
-            chunk_roles = chunk.get("roles", self._assign_roles_from_filename(chunk.get("doc_id", "")))
+#         for i in ranked_idx:
+#             chunk = self.meta_json[i]
+#             chunk_roles = chunk.get("roles", self._assign_roles_from_filename(chunk.get("doc_id", "")))
 
-            # RBAC filtering
-            if not set(roles).intersection(set(chunk_roles)):
-                continue
+#             # RBAC filtering
+#             if not set(roles).intersection(set(chunk_roles)):
+#                 continue
 
-            # Skip weak matches
-            if fused[i] < 0.05:
-                continue
+#             # Skip weak matches
+#             if fused[i] < 0.05:
+#                 continue
 
-            # Highlight results
-            excerpt = self._highlight_keywords(chunk["text"][:700], tokens)
+#             # Highlight results
+#             excerpt = self._highlight_keywords(chunk["text"][:700], tokens)
 
-            results.append({
-                "doc_id": chunk["doc_id"],
-                "article_no": chunk["article_no"],
-                "page_start": chunk["page_start"],
-                "page_end": chunk["page_end"],
-                "score": round(float(fused[i]), 3),
-                "roles": chunk_roles,
-                "excerpt": excerpt
-            })
+#             results.append({
+#                 "doc_id": chunk["doc_id"],
+#                 "article_no": chunk["article_no"],
+#                 "page_start": chunk["page_start"],
+#                 "page_end": chunk["page_end"],
+#                 "score": round(float(fused[i]), 3),
+#                 "roles": chunk_roles,
+#                 "excerpt": excerpt
+#             })
 
-            if len(results) >= topk:
-                break
+#             if len(results) >= topk:
+#                 break
 
-        # --- Fallback if no result ---
-        if not results:
-            print("⚠️ No semantic results — falling back to keyword search.")
-            for i in np.argsort(-bm25_norm)[:topk]:
-                chunk = self.meta_json[i]
-                if not set(roles).intersection(set(chunk.get("roles", []))):
-                    continue
-                excerpt = self._highlight_keywords(chunk["text"][:700], tokens)
-                results.append({
-                    "doc_id": chunk["doc_id"],
-                    "article_no": chunk["article_no"],
-                    "page_start": chunk["page_start"],
-                    "page_end": chunk["page_end"],
-                    "score": round(float(bm25_norm[i]), 3),
-                    "roles": chunk.get("roles", []),
-                    "excerpt": excerpt
-                })
+#         # --- Fallback if no result ---
+#         if not results:
+#             print("⚠️ No semantic results — falling back to keyword search.")
+#             for i in np.argsort(-bm25_norm)[:topk]:
+#                 chunk = self.meta_json[i]
+#                 if not set(roles).intersection(set(chunk.get("roles", []))):
+#                     continue
+#                 excerpt = self._highlight_keywords(chunk["text"][:700], tokens)
+#                 results.append({
+#                     "doc_id": chunk["doc_id"],
+#                     "article_no": chunk["article_no"],
+#                     "page_start": chunk["page_start"],
+#                     "page_end": chunk["page_end"],
+#                     "score": round(float(bm25_norm[i]), 3),
+#                     "roles": chunk.get("roles", []),
+#                     "excerpt": excerpt
+#                 })
 
-        return {
-            "answer": results[0]["excerpt"] if results else "❌ No relevant article found.",
-            "results": results
-        }
+#         return {
+#             "answer": results[0]["excerpt"] if results else "❌ No relevant article found.",
+#             "results": results
+#         }
 
-    # ------------------------------------------------------------------
-    def _highlight_keywords(self, text, tokens):
-        """Highlight all query tokens in the text."""
-        for tok in tokens:
-            if not tok.strip():
-                continue
-            pattern = re.compile(re.escape(tok), re.IGNORECASE)
-            text = pattern.sub(
-                lambda m: f"<mark style='background:yellow;font-weight:bold;'>{m.group(0)}</mark>",
-                text
-            )
-        return text
+#     # ------------------------------------------------------------------
+#     def _highlight_keywords(self, text, tokens):
+#         """Highlight all query tokens in the text."""
+#         for tok in tokens:
+#             if not tok.strip():
+#                 continue
+#             pattern = re.compile(re.escape(tok), re.IGNORECASE)
+#             text = pattern.sub(
+#                 lambda m: f"<mark style='background:yellow;font-weight:bold;'>{m.group(0)}</mark>",
+#                 text
+#             )
+#         return text
 
-    # ------------------------------------------------------------------
-    def _assign_roles_from_filename(self, filename: str):
-        """Assign access roles based on filename convention."""
-        if "restricted" in filename.lower():
-            return ["legal", "admin"]
-        return ["staff", "legal", "admin"]
+#     # ------------------------------------------------------------------
+#     def _assign_roles_from_filename(self, filename: str):
+#         """Assign access roles based on filename convention."""
+#         if "restricted" in filename.lower():
+#             return ["legal", "admin"]
+#         return ["staff", "legal", "admin"]
