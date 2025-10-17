@@ -21,6 +21,7 @@ class Retriever:
         self.faiss_topk = 50
         self.semantic_threshold = 0.35
         self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        
 
         print("⚙️ Initializing Universal Hybrid Retriever (BM25 + FAISS)...")
 

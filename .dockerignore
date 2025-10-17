@@ -27,11 +27,7 @@ build/
 dist/
 *.egg-info/
 
-# Ignore local data (optional)
-data/raw_pdfs/
-data/processed/
-data/temp/
-*.pdf
+
 
 # Ignore model cache (if downloaded externally)
 transformers_cache/
