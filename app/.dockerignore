@@ -1,0 +1,44 @@
+# Ignore virtual environments
+.venv/
+env/
+venv/
+
+# Ignore cache, logs, and temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.tmp
+*.swp
+*.swo
+*.db
+*.sqlite3
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Ignore Git and build files
+.git/
+.gitignore
+build/
+dist/
+*.egg-info/
+
+# Ignore local data (optional)
+data/raw_pdfs/
+data/processed/
+data/temp/
+*.pdf
+
+# Ignore model cache (if downloaded externally)
+transformers_cache/
+huggingface/
+cache/
+
+
+
+# VS Code files
+.vscode/

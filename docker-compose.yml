@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  article-finder:
+    container_name: article_finder
+    image: article-finder-ai:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
