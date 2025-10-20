@@ -65,3 +65,6 @@ typing-extensions==4.12.2     # Backport of latest typing features
 #
 # For development:
 # pip install -r requirements.txt pytest black flake8
+
+tinydb==4.8.2
+tinydb-serialization==2.1.1
