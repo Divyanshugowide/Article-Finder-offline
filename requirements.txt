@@ -1,16 +1,67 @@
-fastapi==0.115.0
-uvicorn==0.32.0
-sentence-transformers==3.1.1
-faiss-cpu==1.9.0
-numpy==1.26.4
-scikit-learn==1.5.2
-rank-bm25==0.2.2
-PyMuPDF==1.24.8
-python-dotenv==1.0.1
-# HTTP Client for Ollama API calls
-httpx==0.27.2
-# Data Handling & Validation
-pydantic==2.8.2
+# =====================================================
+# Article Finder AI - Enhanced 3D ChatGPT Experience
+# =====================================================
+# This file contains all dependencies for the premium
+# ChatGPT-like chatbot with 3D animations, streaming,
+# and advanced document search capabilities.
 
-# Utility
-typing-extensions==4.12.2
+# =====================================
+# Core Web Framework & API
+# =====================================
+fastapi==0.115.0              # Modern, fast web framework for building APIs
+uvicorn==0.32.0                # Lightning-fast ASGI server for FastAPI
+
+# =====================================
+# AI & Machine Learning
+# =====================================
+sentence-transformers==3.1.1   # Sentence embeddings for semantic search
+faiss-cpu==1.9.0               # Facebook AI Similarity Search - vector database
+numpy==1.26.4                  # Fundamental package for scientific computing
+scikit-learn==1.5.2            # Machine learning library for preprocessing
+
+# =====================================
+# Document Processing & Search
+# =====================================
+rank-bm25==0.2.2               # BM25 ranking algorithm for text search
+PyMuPDF==1.24.8               # PDF processing and text extraction
+
+# =====================================
+# HTTP Client & API Communication
+# =====================================
+httpx==0.27.2                 # Async HTTP client for Ollama API calls
+                               # Supports streaming responses for real-time chat
+
+# =====================================
+# Data Validation & Configuration
+# =====================================
+pydantic==2.8.2               # Data validation using Python type annotations
+python-dotenv==1.0.1          # Load environment variables from .env file
+
+# =====================================
+# Type Hints & Utilities
+# =====================================
+typing-extensions==4.12.2     # Backport of latest typing features
+
+# =====================================
+# Optional: Development & Testing
+# =====================================
+# pytest==7.4.3               # Testing framework (uncomment if needed)
+# black==23.11.0               # Code formatter (uncomment if needed)
+# flake8==6.1.0                # Linting tool (uncomment if needed)
+
+# =====================================
+# Notes:
+# =====================================
+# - All versions are pinned for reproducible builds
+# - FastAPI + Uvicorn provide the web server foundation
+# - Sentence-transformers + FAISS enable semantic search
+# - HTTPX handles streaming communication with Ollama
+# - PyMuPDF processes PDF documents for indexing
+# - BM25 provides traditional keyword-based search
+# - Pydantic ensures type safety and data validation
+#
+# Installation:
+# pip install -r requirements.txt
+#
+# For development:
+# pip install -r requirements.txt pytest black flake8
