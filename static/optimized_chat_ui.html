@@ -1,24 +1,30 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Crystal Chat — Article Finder AI</title>
+    <title>💎 Crystal Chat — Article Finder AI</title>
 
-    <!-- Fonts & Icons -->
+    <!-- 💎 Favicon -->
+    <link rel="icon" type="image/png" href="/static/ChatGPT Image Oct 20, 2025, 09_45_27 PM.png" />
+    <link rel="apple-touch-icon" href="/static/ChatGPT Image Oct 20, 2025, 09_45_27 PM.png" />
+    <meta name="theme-color" content="#8b5cf6">
+
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 
     <style>
          :root {
-            --sidebar-bg: #202123;
-            --chat-bg: #343541;
-            --user-msg-bg: #2f80ed;
-            --assistant-msg-bg: #444654;
-            --border-color: #4a4b53;
-            --text-color: #ececf1;
-            --accent: #19c37d;
+            --sidebar-bg: #1e1f23;
+            --chat-bg: #2b2d31;
+            --user-msg-bg: #007bff;
+            --assistant-msg-bg: #3a3b41;
+            --border-color: #444;
+            --text-color: #f5f5f5;
+            --accent: #a78bfa;
+            --highlight: linear-gradient(90deg, rgba(167, 139, 250, 0.3), rgba(147, 197, 253, 0.3));
         }
         
         * {
@@ -27,298 +33,410 @@
         
         body {
             margin: 0;
-            height: 100vh;
             display: flex;
-            background-color: var(--chat-bg);
+            height: 100vh;
+            background: var(--chat-bg);
             color: var(--text-color);
             font-family: "Inter", sans-serif;
             overflow: hidden;
         }
         /* Sidebar */
+        /* Sidebar */
         
         .sidebar {
-            width: 260px;
-            background-color: var(--sidebar-bg);
+            width: 280px;
+            background: rgba(30, 31, 35, 0.75);
+            backdrop-filter: blur(14px);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
             display: flex;
             flex-direction: column;
+            transition: all 0.4s ease;
+            box-shadow: inset 0 0 20px rgba(167, 139, 250, 0.15);
+            overflow: hidden;
             position: relative;
-            transition: transform 0.3s ease;
-            z-index: 2;
         }
         
-        .sidebar.hidden {
-            transform: translateX(-100%);
+        .sidebar::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at top left, rgba(167, 139, 250, 0.15), transparent 60%), radial-gradient(circle at bottom right, rgba(147, 197, 253, 0.1), transparent 70%);
+            z-index: 0;
+            pointer-events: none;
         }
         
         .sidebar-header {
-            padding: 12px;
-            border-bottom: 1px solid var(--border-color);
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            z-index: 2;
         }
         
         .sidebar-header button {
             width: 100%;
-            background: var(--accent);
+            background: linear-gradient(90deg, #8b5cf6, #3b82f6);
             border: none;
             padding: 10px;
-            border-radius: 6px;
+            border-radius: 10px;
             color: white;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+            transition: all 0.3s ease;
         }
         
         .sidebar-header button:hover {
-            background: #15a66d;
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(139, 92, 246, 0.8);
         }
         
         .sidebar-list {
             flex: 1;
             overflow-y: auto;
-            padding: 10px;
+            padding: 14px;
+            z-index: 2;
         }
         
         .conversation-item {
-            padding: 10px;
-            border-radius: 6px;
-            background: transparent;
-            cursor: pointer;
-            transition: background 0.2s;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 10px 12px;
+            border-radius: 10px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            font-size: 0.95rem;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            transition: all 0.25s ease;
+            box-shadow: 0 0 0 rgba(167, 139, 250, 0);
         }
         
         .conversation-item:hover {
-            background-color: rgba(255, 255, 255, 0.1);
+            background: rgba(139, 92, 246, 0.15);
+            border-color: rgba(167, 139, 250, 0.4);
+            box-shadow: 0 0 10px rgba(167, 139, 250, 0.3);
+            transform: translateY(-2px);
         }
         
-        .sidebar-footer {
-            border-top: 1px solid var(--border-color);
-            padding: 10px;
-        }
-        
-        .sidebar-footer button {
-            width: 100%;
-            background: #ef4444;
+        .conversation-item input {
+            background: transparent;
             border: none;
-            padding: 8px;
-            border-radius: 6px;
-            color: white;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s;
+            color: #f5f5f5;
+            font-size: 0.95rem;
+            flex: 1;
+            outline: none;
         }
         
-        .sidebar-footer button:hover {
-            background: #dc2626;
+        .conversation-item button {
+            background: none;
+            border: none;
+            color: #aaa;
+            cursor: pointer;
+            margin-left: 8px;
+            font-size: 14px;
+            transition: color 0.2s ease, transform 0.2s ease;
         }
-        /* Chat Area */
+        
+        .conversation-item button:hover {
+            color: #fff;
+            transform: scale(1.15);
+        }
+        /* Chat area */
+        /* ===============================
+   💎 Crystal Chat Area Enhancement
+   =============================== */
         
         .chat-area {
             flex: 1;
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
+            background: radial-gradient(circle at top right, #2b2d31 0%, #1a1a1d 100%);
             position: relative;
+            overflow: hidden;
         }
+        
+        .chat-area::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(147, 197, 253, 0.08), transparent 70%), radial-gradient(circle at 80% 80%, rgba(167, 139, 250, 0.1), transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        /* Header */
         
         .chat-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 16px;
-            border-bottom: 1px solid var(--border-color);
-            background: #2a2b32;
+            padding: 12px 18px;
+            background: rgba(31, 31, 36, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             position: relative;
-            z-index: 1;
+            z-index: 2;
+            box-shadow: 0 2px 10px rgba(167, 139, 250, 0.15);
         }
         
-        .menu-toggle {
-            background: none;
-            border: none;
-            color: var(--text-color);
-            font-size: 20px;
-            margin-right: 10px;
-            cursor: pointer;
-            transition: color 0.2s;
+        .chat-header h4 {
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #a78bfa, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
         }
-        
-        .menu-toggle:hover {
-            color: var(--accent);
-        }
-        
-        .chat-header select {
-            background: #3b3b44;
-            border: none;
-            color: var(--text-color);
-            border-radius: 6px;
-            padding: 4px 8px;
-        }
+        /* Messages area */
         
         .messages {
             flex: 1;
             overflow-y: auto;
-            padding: 24px;
+            padding: 24px 28px;
             display: flex;
             flex-direction: column;
             scroll-behavior: smooth;
-            min-height: 0;
+            position: relative;
+            z-index: 1;
         }
-        /* Messages */
+        /* Messages styling */
         
         .message {
-            margin-bottom: 16px;
-            line-height: 1.6;
-            white-space: normal;
-        }
-        
-        .message.assistant {
-            align-self: flex-start;
-            background: var(--assistant-msg-bg);
-            padding: 16px 20px;
-            border-radius: 10px;
-            max-width: 80%;
-            color: #f1f1f1;
-            box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+            margin-bottom: 18px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            animation: fadeInUp 0.3s ease;
+            font-size: 0.95rem;
         }
         
         .message.user {
             align-self: flex-end;
-            background: var(--user-msg-bg);
-            padding: 16px 20px;
-            border-radius: 10px;
-            max-width: 80%;
-            color: white;
-            box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            padding: 14px 18px;
+            border-radius: 18px 18px 0 18px;
+            color: #fff;
+            max-width: 75%;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+            transform-origin: bottom right;
         }
         
-        .message strong {
-            color: #ffffff;
+        .message.assistant {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 14px 18px;
+            border-radius: 18px 18px 18px 0;
+            max-width: 75%;
+            color: #f5f5f5;
+            box-shadow: 0 0 10px rgba(167, 139, 250, 0.15);
+            transform-origin: bottom left;
+        }
+        /* Highlighted text inside assistant replies */
+        
+        .highlight {
+            background: rgba(147, 197, 253, 0.15);
+            border-left: 3px solid #8b5cf6;
+            border-radius: 6px;
+            padding: 3px 5px;
             font-weight: 600;
         }
-        
-        .message ul,
-        .message ol {
-            margin: 10px 0 10px 25px;
-            padding: 0;
-        }
-        
-        .message li {
-            margin-bottom: 5px;
-        }
-        
-        .message pre {
-            background: #1e1e2e;
-            color: #dcdcdc;
-            padding: 10px;
-            border-radius: 8px;
-            overflow-x: auto;
-            font-size: 0.95rem;
-        }
-        /* Input Area */
+        /* Chat input area */
+        /* =======================================
+   🌈 CRYSTAL AI — Glowing Chat Input Bar
+   ======================================= */
         
         .chat-input {
-            padding: 15px 20px;
-            border-top: 1px solid var(--border-color);
-            background: #343541;
             display: flex;
-            gap: 10px;
             align-items: center;
+            padding: 14px 18px;
+            background: rgba(31, 31, 36, 0.9);
+            border-top: 2px solid transparent;
+            backdrop-filter: blur(14px);
+            position: relative;
+            z-index: 2;
+            box-shadow: 0 -2px 15px rgba(139, 92, 246, 0.3);
+            overflow: hidden;
         }
+        
+        .chat-input::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            padding: 2px;
+            background: linear-gradient( 90deg, #ff0080, #ff8c00, #ffff00, #00ff00, #00ffff, #0080ff, #ff00ff, #ff0080);
+            background-size: 400% 100%;
+            animation: rainbowMove 8s linear infinite;
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        /* Textarea styling */
         
         textarea {
             flex: 1;
-            background: #40414f;
-            border: none;
-            resize: none;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
             color: white;
-            border-radius: 6px;
             padding: 12px;
             font-size: 1rem;
-            line-height: 1.4;
-            max-height: 160px;
-            overflow-y: auto;
+            resize: none;
+            transition: all 0.3s ease;
         }
         
         textarea:focus {
             outline: none;
+            border-color: #8b5cf6;
+            box-shadow: 0 0 12px rgba(139, 92, 246, 0.4);
         }
+        /* Send & Stop buttons */
         
-        button.send,
-        button.stop {
+        .send,
+        .stop {
             border: none;
             border-radius: 50%;
-            width: 45px;
-            height: 45px;
+            width: 48px;
+            height: 48px;
+            margin-left: 10px;
             color: white;
             font-size: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.25s ease;
+            box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
         }
         
-        button.send {
-            background: var(--accent);
+        .send {
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
         }
         
-        button.send:hover {
-            background: #15a66d;
-        }
-        
-        button.stop {
-            background: #ef4444;
+        .stop {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
             display: none;
         }
         
-        button.stop:hover {
-            background: #dc2626;
+        .send:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.7);
         }
         
-         ::-webkit-scrollbar {
-            width: 8px;
+        .stop:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+        }
+        /* Fancy entry animation */
+        
+        @keyframes fadeInUp {
+            0% {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
          ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 8px;
+            background: linear-gradient(180deg, #8b5cf6, #3b82f6);
+            border-radius: 10px;
         }
         
-        @media (max-width: 900px) {
-            .sidebar {
-                position: absolute;
-                height: 100%;
+         ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, #a78bfa, #60a5fa);
+        }
+        /* ========================================
+   🌈 CRYSTAL AI HEADER — RAINBOW GLOW EFFECT
+   ======================================== */
+        
+        .chat-header {
+            position: relative;
+            overflow: hidden;
+            border-bottom: 2px solid transparent;
+            background: rgba(31, 31, 36, 0.85);
+            backdrop-filter: blur(12px);
+            z-index: 2;
+            box-shadow: 0 2px 15px rgba(139, 92, 246, 0.2);
+        }
+        
+        .chat-header::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            padding: 2px;
+            border-radius: 0;
+            background: linear-gradient( 90deg, #ff0080, #ff8c00, #ffff00, #00ff00, #00ffff, #0080ff, #ff00ff, #ff0080);
+            background-size: 400% 100%;
+            animation: rainbowMove 8s linear infinite;
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        /* Logo shimmer effect */
+        
+        .chat-header img {
+            filter: drop-shadow(0 0 8px rgba(167, 139, 250, 0.6));
+            transition: filter 0.4s ease, transform 0.4s ease;
+        }
+        
+        .chat-header img:hover {
+            transform: rotate(8deg) scale(1.1);
+            filter: drop-shadow(0 0 20px rgba(147, 197, 253, 0.8));
+        }
+        /* Gradient shimmer text effect */
+        
+        .chat-header h4 {
+            background: linear-gradient(90deg, #a78bfa, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 300%;
+            animation: textShimmer 5s linear infinite;
+        }
+        /* Animations */
+        
+        @keyframes rainbowMove {
+            0% {
+                background-position: 0% 50%;
+            }
+            100% {
+                background-position: 400% 50%;
+            }
+        }
+        
+        @keyframes textShimmer {
+            0% {
+                background-position: 0% 50%;
+            }
+            100% {
+                background-position: 200% 50%;
             }
         }
     </style>
 </head>
 
 <body>
-    <!-- Sidebar -->
-    <div class="sidebar hidden" id="sidebar">
+
+    <div class="sidebar">
         <div class="sidebar-header">
             <button id="newChat"><i class="fas fa-plus"></i> New Chat</button>
         </div>
-        <div class="sidebar-list" id="conversationList"></div>
-        <div class="sidebar-footer">
-            <button id="deleteChats"><i class="fas fa-trash"></i> Delete All</button>
-        </div>
+        <div id="conversationList" class="sidebar-list"></div>
     </div>
 
-    <!-- Chat Area -->
     <div class="chat-area">
         <div class="chat-header">
-            <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
-            <h5 style="margin:0;">💎 Crystal — Article Finder AI</h5>
-            <div class="d-flex gap-2 align-items-center">
+            <h4 style="margin:0; display:flex; align-items:center; gap:8px;">
+                <img src="/static/ChatGPT Image Oct 20, 2025, 09_45_27 PM.png" alt="Crystal AI Logo" style="width:28px; height:28px; border-radius:6px;"> Crystal Chat
+            </h4>
+
+            <div>
                 <select id="roleSelect">
           <option value="staff">Staff</option>
           <option value="legal">Legal</option>
           <option value="admin">Admin</option>
-          <option value="public">Public</option>
         </select>
                 <button id="stopBtn" class="stop"><i class="fas fa-stop"></i></button>
             </div>
@@ -327,7 +445,7 @@
         <div id="messages" class="messages"></div>
 
         <div class="chat-input">
-            <textarea id="messageInput" placeholder="Message Crystal... (Shift + Enter for new line)"></textarea>
+            <textarea id="messageInput" placeholder="Message Crystal..."></textarea>
             <button id="sendBtn" class="send"><i class="fas fa-paper-plane"></i></button>
         </div>
     </div>
@@ -337,60 +455,83 @@
         const inputEl = document.getElementById("messageInput");
         const stopBtn = document.getElementById("stopBtn");
         const conversationList = document.getElementById("conversationList");
-        const sidebar = document.getElementById("sidebar");
-        const toggleBtn = document.getElementById("menuToggle");
-        let conversationId = null,
-            readerController = null,
-            streaming = false;
+        let conversationId = null;
+        let abortController = null;
+        let streaming = false;
 
-        const scrollBottom = () => {
+        function scrollBottom() {
             messagesEl.scrollTo({
                 top: messagesEl.scrollHeight,
                 behavior: "smooth"
             });
-        };
+        }
 
-        function formatMarkdown(text) {
-            // bold
-            text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-            // numbered lists
-            text = text.replace(/^\s*\d+\.\s+/gm, match => `<br>${match}`);
-            // newlines to paragraphs
-            return text.replace(/\n\n/g, "<br><br>").replace(/\n/g, "<br>");
+        function formatText(text) {
+            text = text.replace(/\=\=(.*?)\=\=/g, '<span class="highlight">$1</span>');
+            text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+            return text;
         }
 
         function addMessage(role, text) {
             const div = document.createElement("div");
-            div.className = `message ${role}`;
-            div.innerHTML = formatMarkdown(text);
+            div.className = "message " + role;
+            div.innerHTML = formatText(text);
             messagesEl.appendChild(div);
             scrollBottom();
             return div;
         }
 
-        async function loadConversations() {
+        async function loadChats() {
             const res = await fetch("/chat/conversations");
             const data = await res.json();
             conversationList.innerHTML = "";
             data.forEach(c => {
                 const item = document.createElement("div");
                 item.className = "conversation-item";
+
                 item.innerHTML = `
-          <span>${c.user_role || "Chat"}</span>
+          <input type="text" value="${c.name}" readonly />
           <div>
-            <button class="btn btn-sm text-light" style="background:none;border:none"><i class="fas fa-comments"></i></button>
-            <button class="btn btn-sm text-danger" style="background:none;border:none"><i class="fas fa-trash"></i></button>
-          </div>`;
-                const [loadBtn, delBtn] = item.querySelectorAll("button");
-                loadBtn.onclick = () => loadConversation(c.conversation_id);
-                delBtn.onclick = async(e) => {
+            <button class="rename"><i class="fas fa-pen"></i></button>
+            <button class="delete"><i class="fas fa-trash"></i></button>
+          </div>
+        `;
+
+                const input = item.querySelector("input");
+                const renameBtn = item.querySelector(".rename");
+                const delBtn = item.querySelector(".delete");
+
+                input.onclick = () => loadConversation(c.conversation_id);
+                renameBtn.onclick = e => {
+                    e.stopPropagation();
+                    input.removeAttribute("readonly");
+                    input.focus();
+                    const val = input.value;
+                    input.value = "";
+                    input.value = val; // cursor at end
+                };
+                input.onblur = async() => {
+                    input.setAttribute("readonly", true);
+                    const newName = input.value.trim() || "Untitled Chat";
+                    await fetch(`/chat/conversations/${c.conversation_id}`, {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            name: newName
+                        })
+                    });
+                    loadChats();
+                };
+                delBtn.onclick = async e => {
                     e.stopPropagation();
                     if (confirm("Delete this chat?")) {
                         await fetch(`/chat/conversations/${c.conversation_id}`, {
                             method: "DELETE"
                         });
                         if (conversationId === c.conversation_id) messagesEl.innerHTML = "";
-                        loadConversations();
+                        loadChats();
                     }
                 };
                 conversationList.appendChild(item);
@@ -404,26 +545,12 @@
             messagesEl.innerHTML = "";
             conv.messages.forEach(m => addMessage(m.role, m.content));
             scrollBottom();
-            sidebar.classList.add("hidden");
         }
 
         document.getElementById("newChat").onclick = () => {
             conversationId = null;
             messagesEl.innerHTML = "";
-            addMessage("assistant", "👋 Hi! I'm <strong>Crystal</strong> — your Article Finder assistant.<br>How can I help you today?");
-        };
-
-        document.getElementById("deleteChats").onclick = async() => {
-            if (confirm("Delete all chats?")) {
-                const res = await fetch("/chat/conversations");
-                const chats = await res.json();
-                for (const c of chats) {
-                    await fetch(`/chat/conversations/${c.conversation_id}`, {
-                        method: "DELETE"
-                    });
-                }
-                loadConversations();
-            }
+            addMessage("assistant", "👋 Hi! I'm <b>Crystal</b> — your Article Finder assistant. How can I help you?");
         };
 
         async function sendMessage() {
@@ -431,75 +558,82 @@
             if (!msg || streaming) return;
             addMessage("user", msg);
             inputEl.value = "";
-            const assistant = addMessage("assistant", `<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`);
 
-            const res = await fetch("/chat/stream", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    message: msg,
-                    conversation_id: conversationId,
-                    user_role: document.getElementById("roleSelect").value,
-                    use_documents: true
-                }),
-            });
-
-            readerController = new AbortController();
-            const reader = res.body.getReader({
-                signal: readerController.signal
-            });
-            const decoder = new TextDecoder();
-            let buffer = "",
-                full = "";
-            streaming = true;
+            const assistant = addMessage("assistant", "<i>Crystal is thinking...</i>");
             stopBtn.style.display = "inline-block";
-            assistant.innerHTML = "";
+            streaming = true;
+            abortController = new AbortController();
 
-            while (true) {
-                const {
-                    done,
-                    value
-                } = await reader.read().catch(() => ({
-                    done: true
-                }));
-                if (done) break;
-                buffer += decoder.decode(value, {
-                    stream: true
+            try {
+                const res = await fetch("/chat/stream", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        message: msg,
+                        conversation_id: conversationId,
+                        user_role: document.getElementById("roleSelect").value
+                    }),
+                    signal: abortController.signal
                 });
-                const lines = buffer.split("\n");
-                buffer = lines.pop();
-                for (const line of lines) {
-                    if (!line.startsWith("data: ")) continue;
-                    try {
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "",
+                    full = "";
+
+                while (true) {
+                    const {
+                        done,
+                        value
+                    } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, {
+                        stream: true
+                    });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (!line.startsWith("data: ")) continue;
                         const data = JSON.parse(line.slice(6));
                         if (data.conversation_id) conversationId = data.conversation_id;
+                        if (data.stopped) {
+                            assistant.innerHTML = "⛔ You stopped this response.";
+                            stopBtn.style.display = "none";
+                            streaming = false;
+                            return;
+                        }
                         if (data.content) {
                             full += data.content;
-                            assistant.innerHTML = formatMarkdown(full);
+                            assistant.innerHTML = formatText(full);
                             scrollBottom();
                         }
-                    } catch {}
+                    }
                 }
+            } catch (err) {
+                if (err.name === "AbortError") {
+                    assistant.innerHTML = "⛔ You stopped this response.";
+                } else {
+                    assistant.innerHTML = "⚠️ Error fetching response.";
+                }
+            } finally {
+                stopBtn.style.display = "none";
+                streaming = false;
+                abortController = null;
+                loadChats();
             }
-
-            stopBtn.style.display = "none";
-            readerController = null;
-            streaming = false;
-            loadConversations();
         }
 
-        stopBtn.onclick = () => {
-            if (streaming && readerController) {
-                readerController.abort();
-                streaming = false;
-                stopBtn.style.display = "none";
-                addMessage("assistant", "⛔ Chat stopped by user.");
-            }
+        stopBtn.onclick = async() => {
+            if (!conversationId) return;
+            stopBtn.style.display = "none";
+            if (abortController) abortController.abort();
+            await fetch(`/chat/stop/${conversationId}`, {
+                method: "POST"
+            });
+            addMessage("assistant", "⛔ You stopped this response.");
         };
-
-        toggleBtn.onclick = () => sidebar.classList.toggle("hidden");
 
         document.getElementById("sendBtn").onclick = sendMessage;
         inputEl.addEventListener("keydown", e => {
@@ -509,9 +643,135 @@
             }
         });
 
-        loadConversations();
-        addMessage("assistant", "👋 Hi! I'm <strong>Crystal</strong> — your Article Finder assistant.<br>How can I help you today?");
+        loadChats();
+        addMessage("assistant", "👋 Hi! I'm <b>Crystal</b> — your Article Finder assistant. How can I help you?");
     </script>
+    <!-- Intro Animation -->
+    <div id="intro-screen" style="
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center, #1f1f24, #0f0f10);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  color: white;
+  font-family: 'Inter', sans-serif;
+  animation: fadeOut 1s ease 4s forwards;
+">
+        <img src="/static/ChatGPT Image Oct 20, 2025, 09_45_27 PM.png" alt="Crystal AI Logo" style="
+    width: 160px;
+    height: 160px;
+    object-fit: contain;
+    animation: float 3s ease-in-out infinite, glow 2s ease-in-out infinite alternate;
+  ">
+        <h1 style="
+    font-size: 2rem;
+    margin-top: 20px;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #a78bfa, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: textglow 2s ease-in-out infinite alternate;
+  ">
+            Crystal AI
+        </h1>
+        <p style="
+    font-size: 1.1rem;
+    color: #ccc;
+    margin-top: 8px;
+    letter-spacing: 0.5px;
+  ">
+            Article Finder • Offline AI Chatbot
+        </p>
+    </div>
+
+    <script>
+        // Fade out and remove intro after a short delay
+        window.addEventListener("load", () => {
+            setTimeout(() => {
+                document.getElementById("intro-screen").style.opacity = "0";
+                setTimeout(() => document.getElementById("intro-screen").remove(), 1000);
+            }, 4000); // visible for 4 seconds
+        });
+    </script>
+
+    <style>
+        @keyframes float {
+            0%,
+            100% {
+                transform: translateY(0) rotateY(0deg);
+            }
+            50% {
+                transform: translateY(-10px) rotateY(10deg);
+            }
+        }
+        
+        @keyframes glow {
+            0% {
+                filter: drop-shadow(0 0 5px #a78bfa);
+            }
+            100% {
+                filter: drop-shadow(0 0 15px #60a5fa);
+            }
+        }
+        
+        @keyframes textglow {
+            from {
+                text-shadow: 0 0 5px #a78bfa, 0 0 10px #60a5fa;
+            }
+            to {
+                text-shadow: 0 0 20px #a78bfa, 0 0 30px #60a5fa;
+            }
+        }
+        
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                visibility: hidden;
+            }
+        }
+    </style>
+    <script>
+        /* =======================================
+                   🌈 CRYSTAL AI — Rainbow Animated Favicon
+                   ======================================= */
+        (function rainbowFavicon() {
+            const faviconURL = "/static/ChatGPT Image Oct 20, 2025, 09_45_27 PM.png";
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            const img = new Image();
+            let hue = 0;
+            canvas.width = 64;
+            canvas.height = 64;
+
+            img.crossOrigin = "anonymous";
+            img.src = faviconURL;
+
+            img.onload = function() {
+                setInterval(() => {
+                    ctx.clearRect(0, 0, 64, 64);
+                    ctx.save();
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = `hsl(${hue}, 100%, 65%)`;
+                    ctx.drawImage(img, 8, 8, 48, 48);
+                    ctx.restore();
+
+                    const link = document.querySelector("link[rel~='icon']") || document.createElement("link");
+                    link.rel = "icon";
+                    link.type = "image/png";
+                    link.href = canvas.toDataURL("image/png");
+                    document.head.appendChild(link);
+
+                    hue = (hue + 5) % 360;
+                }, 150);
+            };
+        })();
+    </script>
+
+
+
 </body>
 
 </html>

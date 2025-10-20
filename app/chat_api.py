@@ -1,190 +1,311 @@
-# app/chat_api.py
-import os
-import uuid
-from pathlib import Path
-from typing import List, Optional, Dict, Any
-
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import httpx
-
-# ----------------------------
-# Import your Retriever
-# ----------------------------
+import uuid
+import os
+from typing import Dict, List, Any
 from app.retrieval import Retriever
 
-# ----------------------------
-# Create FastAPI app
-# ----------------------------
-app = FastAPI(title="Article Finder Chatbot (Ollama Local)", version="1.0")
+# --------------------------------------------------------
+# 🔹 FastAPI Initialization
+# --------------------------------------------------------
+app = FastAPI(title="Article Finder + Chat Assistant", version="4.1")
 
-# ----------------------------
-# Detect /static folder robustly
-# ----------------------------
-ROOT_DIR = Path(__file__).resolve().parent.parent  # one level up from app/
-STATIC_DIR = ROOT_DIR / "static"
-
-print(f"📁 Static folder resolved as: {STATIC_DIR}")
-
-if not STATIC_DIR.exists():
-    raise RuntimeError(f"⚠️ Static folder not found at {STATIC_DIR} — please create /static/chat_ui.html")
-
-# Mount /static folder for serving JS/CSS/HTML
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-# ----------------------------
-# Pydantic Models
-# ----------------------------
-class Message(BaseModel):
-    role: str
-    content: str
+# --------------------------------------------------------
+# 🔹 Schemas
+# --------------------------------------------------------
+class AskRequest(BaseModel):
+    user_id: str
+    roles: list[str]
+    query: str
+    topk: int = 5
 
 class ChatRequest(BaseModel):
-    messages: Optional[List[Message]] = None
-    conversation_id: Optional[str] = None
-    use_retriever: Optional[bool] = True
-    roles: Optional[List[str]] = ["staff"]
-    topk: Optional[int] = 3
+    messages: List[Dict[str, str]]
+    conversation_id: str | None = None
+    roles: list[str] = ["staff"]
+    topk: int = 3
 
-class ChatResponse(BaseModel):
-    conversation_id: str
-    reply: str
-    sources: Optional[List[Dict[str, Any]]] = None
+# --------------------------------------------------------
+# 🔹 Retriever Setup
+# --------------------------------------------------------
+BM25_PATH = os.getenv("BM25_PATH", "data/idx/bm25.pkl")
+FAISS_PATH = os.getenv("FAISS_PATH", "data/idx/faiss.index")
+META_PATH = os.getenv("META_PATH", "data/idx/meta.json")
 
-# ----------------------------
-# Load Retriever
-# ----------------------------
-BM25_PKL = "data/idx/bm25.pkl"
-FAISS_IDX = "data/idx/faiss.index"      # ✅ Fixed file name
-META_JSON = "data/idx/meta.json"
+retriever = Retriever(BM25_PATH, FAISS_PATH, META_PATH)
+print("✅ Retriever initialized successfully.")
 
-retriever = None
-try:
-    retriever = Retriever(
-        bm25_path=BM25_PKL,
-        faiss_path=FAISS_IDX,
-        meta_path=META_JSON,
-        alpha=0.45,
-    )
-    print("✅ Retriever initialized successfully.")
-except Exception as e:
-    print(f"[WARN] Retriever failed to initialize: {e}")
-
-# ----------------------------
-# In-memory conversation store
-# ----------------------------
+# --------------------------------------------------------
+# 🔹 Memory & Ollama Setup
+# --------------------------------------------------------
 CONV_MEMORY: Dict[str, List[Dict[str, str]]] = {}
 MAX_HISTORY = 12
 
-# ----------------------------
-# Call Ollama API locally
-# ----------------------------
-async def call_ollama_api(messages: list[dict[str, str]], model: str = "phi3") -> str:
-    """
-    Use local Ollama model (phi3, llama3, mistral, etc.)
-    """
+async def call_ollama(messages: list[dict[str, str]], model: str = "phi3") -> str:
+    """Local Ollama chat."""
     OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
-    payload = {
-        "model": model,
-        "messages": messages,
-        "stream": False
-    }
-
+    payload = {"model": model, "messages": messages, "stream": False}
     try:
         async with httpx.AsyncClient(timeout=180) as client:
-            response = await client.post(OLLAMA_URL, json=payload)
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code,
-                                    detail=f"Ollama API error: {response.text}")
-            data = response.json()
-            return data.get("message", {}).get("content", "").strip()
+            r = await client.post(OLLAMA_URL, json=payload)
+            if r.status_code != 200:
+                raise HTTPException(status_code=r.status_code, detail=f"Ollama error: {r.text}")
+            return r.json().get("message", {}).get("content", "").strip()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ollama API call failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Ollama call failed: {e}")
 
-# ----------------------------
-# Main chat endpoint
-# ----------------------------
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    conv_id = request.conversation_id or str(uuid.uuid4())
-    CONV_MEMORY.setdefault(conv_id, [])
-
-    if request.messages:
-        for msg in request.messages:
-            CONV_MEMORY[conv_id].append({"role": msg.role, "content": msg.content})
-        CONV_MEMORY[conv_id] = CONV_MEMORY[conv_id][-MAX_HISTORY:]
-
-    user_msgs = [m for m in request.messages if m.role == "user"] if request.messages else []
-    if not user_msgs:
-        raise HTTPException(status_code=400, detail="No user message found.")
-    user_text = user_msgs[-1].content
-
-    # Retriever
-    sources, context_text = [], ""
-    if request.use_retriever and retriever:
-        try:
-            results = retriever.search(user_text, roles=request.roles, topk=request.topk)
-            for r in results["results"]:
-                sources.append({
-                    "doc_id": r.get("doc_id"),
-                    "article_no": r.get("article_no"),
-                    "page_start": r.get("page_start"),
-                    "page_end": r.get("page_end"),
-                    "score": r.get("score"),
-                    "excerpt": r.get("excerpt")
-                })
-            top_excerpts = [s["excerpt"] for s in sources[:3]]
-            context_text = "\n\n".join(top_excerpts)
-        except Exception as e:
-            print(f"[WARN] Retriever search failed: {e}")
-
-    # Build messages for Ollama
-    ollama_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant for the Article Finder project. "
-                "Use the provided document context to answer clearly and concisely."
-            ),
-        },
-        *CONV_MEMORY[conv_id],
+# --------------------------------------------------------
+# 🔹 Intent Detection (Small Talk vs Search)
+# --------------------------------------------------------
+def is_search_intent(text: str) -> bool:
+    """Simple heuristic to detect if the user wants to search documents."""
+    text = text.lower().strip()
+    search_keywords = [
+        "find", "search", "show", "look for", "article", "page", "where", "clause",
+        "section", "in the pdf", "document", "mention", "locate"
     ]
-    if context_text:
-        ollama_messages.append({"role": "system", "content": f"Context:\n{context_text}"})
+    return any(k in text for k in search_keywords)
 
-    # Call local model
-    reply = await call_ollama_api(ollama_messages, model="phi3")
+# --------------------------------------------------------
+# 🔹 API Endpoints
+# --------------------------------------------------------
+@app.get("/health")
+def health():
+    return {"ok": True, "message": "Server running"}
 
-    # Store assistant reply
-    CONV_MEMORY[conv_id].append({"role": "assistant", "content": reply})
-    CONV_MEMORY[conv_id] = CONV_MEMORY[conv_id][-MAX_HISTORY:]
+@app.post("/ask")
+def ask(req: AskRequest):
+    return retriever.search(req.query, req.roles, req.topk)
 
-    return ChatResponse(conversation_id=conv_id, reply=reply, sources=sources)
 
-# ----------------------------
-# Conversation management
-# ----------------------------
-@app.get("/conversation/{conv_id}")
-async def get_conversation(conv_id: str):
-    return JSONResponse(content={
-        "conversation_id": conv_id,
-        "messages": CONV_MEMORY.get(conv_id, [])
-    })
 
-@app.post("/conversation/{conv_id}/reset")
-async def reset_conversation(conv_id: str):
-    CONV_MEMORY[conv_id] = []
-    return JSONResponse(content={"conversation_id": conv_id, "status": "reset"})
+@app.patch("/chat/conversations/{cid}")
+async def rename_conversation(cid: str, payload: dict):
+    conv = get_conversation(cid)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    conv["name"] = payload.get("name", conv.get("name", "Untitled Chat"))
+    conv["updated_at"] = datetime.now().isoformat()
+    save_conversation(conv)
+    return {"status": "renamed"}
 
-# ----------------------------
-# Serve UI (chat_ui.html)
-# ----------------------------
-@app.get("/")
-def ui_index():
-    ui_path = STATIC_DIR / "chat_ui.html"
-    print(f"🔍 Looking for UI at: {ui_path}")
-    if ui_path.exists():
-        return FileResponse(str(ui_path), media_type="text/html")
-    return {"message": f"chat_ui.html not found in {STATIC_DIR}"}
+@app.patch("/chat/conversations/{cid}")
+async def rename_conversation(cid: str, payload: dict):
+    conv = get_conversation(cid)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    conv["name"] = payload.get("name", conv.get("name", "Untitled"))
+    conv["updated_at"] = datetime.now().isoformat()
+    save_conversation(conv)
+    return {"status": "renamed"}
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    conv_id = req.conversation_id or str(uuid.uuid4())
+    CONV_MEMORY.setdefault(conv_id, [])
+    for m in req.messages:
+        CONV_MEMORY[conv_id].append(m)
+    CONV_MEMORY[conv_id] = CONV_MEMORY[conv_id][-10:]  # keep smaller memory
+
+    user_msgs = [m for m in req.messages if m["role"] == "user"]
+    if not user_msgs:
+        raise HTTPException(status_code=400, detail="No user message provided.")
+    query = user_msgs[-1]["content"]
+
+    wants_search = any(k in query.lower() for k in [
+        "find", "search", "look", "article", "page", "where", "in pdf", "document"
+    ])
+
+    # Build message context
+    messages = [
+        {"role": "system", "content": "You are Crystal, a friendly assistant that helps find information in PDFs or chat casually. Speak naturally and warmly."},
+        *CONV_MEMORY[conv_id],
+        {"role": "user", "content": query}
+    ]
+
+    # If it's a search, add retriever context
+    sources = []
+    if wants_search:
+        results = retriever.search(query, req.roles, req.topk)
+        sources = results["results"]
+        context = "\n\n".join([
+            f"Document {r['doc_id']} Article {r.get('article_no','?')} Pages {r.get('page_start','?')}-{r.get('page_end','?')}: {r['excerpt']}"
+            for r in sources[:3]
+        ])
+        messages.append({"role": "system", "content": f"Context:\n{context}"})
+
+    async def stream_response():
+        OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
+        payload = {"model": "phi3", "messages": messages, "stream": True}
+        try:
+            async with httpx.AsyncClient(timeout=0) as client:
+                async with client.stream("POST", OLLAMA_URL, json=payload) as r:
+                    async for line in r.aiter_lines():
+                        if line.strip():
+                            yield f"data: {line}\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {str(e)}\n\n"
+
+    return StreamingResponse(stream_response(), media_type="text/event-stream")
+
+# --------------------------------------------------------
+# 🔹 UI with “Chat with Crystal” Button
+# --------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Article Finder AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #7c3aed;
+  --secondary: #a78bfa;
+  --accent: #e879f9;
+  --bg-gradient: linear-gradient(135deg, #ede9fe 0%, #f5f3ff 100%);
+}
+* { box-sizing: border-box; }
+body {
+  font-family: 'Poppins', sans-serif;
+  background: var(--bg-gradient);
+  margin: 0;
+  padding: 0;
+  color: #1e1b4b;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+h1 {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+#controls {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px auto;
+  max-width: 900px;
+}
+input, select, button {
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: none;
+  font-size: 1rem;
+}
+input, select {
+  background: rgba(255,255,255,0.85);
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+button {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+button:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(124,58,237,0.3); }
+#results {
+  max-width: 900px;
+  margin: 0 auto 60px;
+}
+.result {
+  background: rgba(255,255,255,0.9);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
+.result b { color: var(--primary); }
+
+/* Chat Floating Button */
+#chatBtn {
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  width: 70px; height: 70px;
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle at top left, var(--primary), var(--accent));
+  color: white; font-size: 30px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+  transition: 0.3s;
+  z-index: 20;
+}
+#chatBtn:hover { transform: scale(1.1) rotate(8deg); }
+
+/* Responsive */
+@media (max-width: 600px) {
+  #controls { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<h1>🔎 Mannual Article Finder AI</h1>
+
+<div id="controls">
+  <input id="query" type="text" placeholder="Search or ask..." style="width:300px;">
+  <select id="role">
+    <option value="staff">Staff</option>
+    <option value="legal">Legal</option>
+    <option value="admin">Admin</option>
+  </select>
+  <button onclick="search()">Search</button>
+</div>
+
+<div id="results"></div>
+
+<!-- 💎 Crystal Chat Button -->
+<div style="text-align:center; margin:40px 0;">
+  <button onclick="window.open('http://127.0.0.1:8001/', '_blank')"
+          style="
+            background: linear-gradient(135deg, #7c3aed, #e879f9);
+            color: white;
+            border: none;
+            border-radius: 18px;
+            padding: 16px 32px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(124,58,237,0.3);
+            transition: all 0.3s ease;
+          "
+          onmouseover="this.style.transform='scale(1.07)'"
+          onmouseout="this.style.transform='scale(1)'">
+    💎 Chat with Crystal (AI Assistant)
+  </button>
+</div>
+
+<script>
+async function search(){
+  const q=document.getElementById('query').value.trim();
+  const role=document.getElementById('role').value;
+  if(!q)return;
+  const body={user_id:'demo',roles:[role],query:q};
+  const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data=await r.json();
+  const div=document.getElementById('results');
+  div.innerHTML=data.results.map(x=>`
+    <div class='result'>
+      <b>${x.doc_id}</b> | Article ${x.article_no} | Pages ${x.page_start}-${x.page_end}
+      <div>${x.excerpt}</div>
+    </div>`).join('');
+}
+document.getElementById('query').addEventListener('keydown',e=>{ if(e.key==='Enter')search(); });
+</script>
+</body>
+</html>
+    """

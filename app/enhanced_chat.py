@@ -1,10 +1,11 @@
 """
-💎 Crystal Chatbot Backend — FastAPI + Ollama + TinyDB + Streaming
-Optimized Version 3.5
+💎 Crystal Chatbot Backend — v6.5
+Enhanced with Stop Chat, Rename Persistence, Delete, Highlighting
 """
 
 import json
 import uuid
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, AsyncGenerator
@@ -17,16 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from tinydb import TinyDB, Query
 
-# Try to import retriever safely
+# Try safe import
 try:
     from app.retrieval import Retriever
 except Exception:
     Retriever = None
 
 
-# =====================================
+# =======================================
 # CONFIG
-# =====================================
+# =======================================
 class ChatConfig:
     OLLAMA_BASE_URL = "http://127.0.0.1:11434"
     DEFAULT_MODEL = "qwen2.5:7b"
@@ -34,15 +35,9 @@ class ChatConfig:
     MAX_HISTORY = 10
 
 
-# =====================================
+# =======================================
 # MODELS
-# =====================================
-class Message(BaseModel):
-    role: str
-    content: str
-    timestamp: Optional[str] = None
-
-
+# =======================================
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
@@ -51,12 +46,11 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
 
 
-# =====================================
-# INIT APP + DB
-# =====================================
-app = FastAPI(title="Crystal Chat", version="3.5")
+# =======================================
+# APP + DB
+# =======================================
+app = FastAPI(title="Crystal Chat", version="6.5")
 
-# CORS for web access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,9 +62,10 @@ db_path = Path("data/chat_memory.json")
 db_path.parent.mkdir(parents=True, exist_ok=True)
 db = TinyDB(db_path)
 
+stop_sessions: Dict[str, bool] = {}
+
 print("✅ TinyDB persistence enabled.")
 
-# Retriever
 retriever = None
 if Retriever:
     try:
@@ -85,14 +80,15 @@ if Retriever:
         print(f"⚠️ Retriever not loaded: {e}")
 
 
-# =====================================
+# =======================================
 # HELPERS
-# =====================================
+# =======================================
 def get_conversation(cid: str) -> dict:
     conv = db.get(Query().conversation_id == cid)
     if not conv:
         conv = {
             "conversation_id": cid,
+            "name": "Untitled Chat",
             "messages": [],
             "created_at": datetime.now().isoformat(),
         }
@@ -103,8 +99,21 @@ def save_conversation(conv: dict):
     db.upsert(conv, Query().conversation_id == conv["conversation_id"])
 
 
-async def stream_ollama(messages: List[Dict[str, str]], model: str):
-    """Stream Ollama responses as SSE"""
+def highlight_key_info(text: str) -> str:
+    """Auto-highlight legal references."""
+    patterns = {
+        r"(Article\s\d+)": r"==\1==",
+        r"(Section\s[\dA-Za-z.\-]+)": r"==\1==",
+        r"(Page[s]?\s\d+(\s*–\s*\d+)?)": r"==\1==",
+        r"(\bClause\s\d+)": r"==\1==",
+    }
+    for pat, repl in patterns.items():
+        text = re.sub(pat, repl, text, flags=re.IGNORECASE)
+    return text
+
+
+async def stream_ollama(messages: List[Dict[str, str]], model: str, cid: str):
+    """Stream Ollama chat."""
     payload = {
         "model": model,
         "messages": messages,
@@ -112,12 +121,18 @@ async def stream_ollama(messages: List[Dict[str, str]], model: str):
         "options": {"temperature": 0.7, "max_tokens": 1200},
     }
 
-    async with httpx.AsyncClient(timeout=ChatConfig.REQUEST_TIMEOUT) as client:
-        async with client.stream("POST", f"{ChatConfig.OLLAMA_BASE_URL}/api/chat", json=payload) as resp:
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream(
+            "POST", f"{ChatConfig.OLLAMA_BASE_URL}/api/chat", json=payload
+        ) as resp:
             if resp.status_code != 200:
                 yield f"data: {json.dumps({'error': 'Ollama connection failed'})}\n\n"
                 return
+
             async for line in resp.aiter_lines():
+                if stop_sessions.get(cid, False):
+                    yield f"data: {json.dumps({'stopped': True})}\n\n"
+                    break
                 if not line.strip():
                     continue
                 try:
@@ -131,22 +146,18 @@ async def stream_ollama(messages: List[Dict[str, str]], model: str):
                     continue
 
 
-# =====================================
+# =======================================
 # ROUTES
-# =====================================
-
+# =======================================
 @app.get("/chat/conversations")
 async def list_conversations():
-    """List all conversation summaries"""
     all_data = db.all()
     return [
         {
             "conversation_id": c["conversation_id"],
+            "name": c.get("name", "Untitled Chat"),
             "created_at": c.get("created_at"),
             "updated_at": c.get("updated_at"),
-            "user_role": (
-                next((m["content"] for m in c.get("messages", []) if m["role"] == "user"), "")
-            )[:30],
         }
         for c in sorted(all_data, key=lambda x: x.get("updated_at", ""), reverse=True)
     ]
@@ -154,64 +165,72 @@ async def list_conversations():
 
 @app.get("/chat/conversations/{cid}")
 async def get_conversation_route(cid: str):
+    return get_conversation(cid)
+
+
+@app.patch("/chat/conversations/{cid}")
+async def rename_conversation(cid: str, payload: dict):
     conv = get_conversation(cid)
-    return conv
+    conv["name"] = payload.get("name", conv.get("name", "Untitled Chat"))
+    conv["updated_at"] = datetime.now().isoformat()
+    save_conversation(conv)
+    return {"status": "renamed"}
 
 
 @app.delete("/chat/conversations/{cid}")
 async def delete_conversation(cid: str):
     db.remove(Query().conversation_id == cid)
+    stop_sessions.pop(cid, None)
     return {"status": "deleted"}
 
 
-@app.delete("/chat/conversations/{cid}/delete_message/{index}")
-async def delete_message(cid: str, index: int):
-    conv = get_conversation(cid)
-    if 0 <= index < len(conv["messages"]):
-        conv["messages"].pop(index)
-        save_conversation(conv)
-        return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Message not found")
+@app.post("/chat/stop/{cid}")
+async def stop_chat(cid: str):
+    stop_sessions[cid] = True
+    return {"status": "stopped"}
 
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     conv_id = request.conversation_id or str(uuid.uuid4())
-    conv = get_conversation(conv_id)
+    stop_sessions[conv_id] = False
 
+    conv = get_conversation(conv_id)
     user_msg = {
         "role": "user",
         "content": request.message,
         "timestamp": datetime.now().isoformat(),
     }
     conv["messages"].append(user_msg)
-    conv["messages"] = conv["messages"][-ChatConfig.MAX_HISTORY :]
+    conv["messages"] = conv["messages"][-ChatConfig.MAX_HISTORY:]
 
     system_prompt = {
         "role": "system",
-        "content": "You are Crystal, a helpful AI for finding and explaining articles.",
+        "content": "You are Crystal, a professional assistant that helps users find and summarize articles from PDFs.",
     }
 
     ollama_msgs = [system_prompt] + conv["messages"]
 
-    # Add retrieved context
+    # Retrieval
     sources = []
     if retriever and request.use_documents:
         try:
             results = retriever.search(request.message, roles=[request.user_role], topk=2)
             sources = results.get("results", [])
             if sources:
-                context = "\n\n".join(
+                ctx = "\n\n".join(
                     f"Doc {s.get('doc_id')}: {s.get('excerpt', '')}" for s in sources
                 )
-                ollama_msgs.append({"role": "system", "content": f"Relevant context:\n{context}"})
+                ollama_msgs.append({"role": "system", "content": f"Context:\n{ctx}"})
         except Exception as e:
             print("⚠️ Retrieval error:", e)
 
     async def generate() -> AsyncGenerator[str, None]:
         yield f"data: {json.dumps({'conversation_id': conv_id, 'sources': sources})}\n\n"
         full_resp = ""
-        async for chunk in stream_ollama(ollama_msgs, request.model or ChatConfig.DEFAULT_MODEL):
+        async for chunk in stream_ollama(
+            ollama_msgs, request.model or ChatConfig.DEFAULT_MODEL, conv_id
+        ):
             yield chunk
             try:
                 data = json.loads(chunk[6:])
@@ -219,11 +238,13 @@ async def chat_stream(request: ChatRequest):
                     full_resp += data["content"]
             except:
                 pass
-        if full_resp.strip():
+
+        if not stop_sessions.get(conv_id, False) and full_resp.strip():
+            highlighted = highlight_key_info(full_resp.strip())
             conv["messages"].append(
                 {
                     "role": "assistant",
-                    "content": full_resp.strip(),
+                    "content": highlighted,
                     "timestamp": datetime.now().isoformat(),
                     "sources": sources,
                 }
@@ -234,9 +255,9 @@ async def chat_stream(request: ChatRequest):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-# =====================================
-# STATIC FILES
-# =====================================
+# =======================================
+# STATIC
+# =======================================
 static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -247,12 +268,4 @@ async def serve_ui():
     html_path = static_dir / "optimized_chat_ui.html"
     if html_path.exists():
         return HTMLResponse(html_path.read_text(encoding="utf-8"))
-    return HTMLResponse("<h3>UI file not found.</h3>")
-
-
-# =====================================
-# ENTRY
-# =====================================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    return HTMLResponse("<h3>UI not found.</h3>")
