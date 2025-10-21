@@ -204,7 +204,7 @@ button:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(124,58,237,0.
 </head>
 <body>
 
-<h1>🔎 Mannual Article Finder AI</h1>
+<h1>🔎 Manual Article Finder AI</h1>
 
 <div id="controls">
   <input id="query" type="text" placeholder="Search or ask..." style="width:300px;">
