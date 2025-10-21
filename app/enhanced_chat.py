@@ -1,24 +1,26 @@
 """
-💎 Crystal Chatbot Backend — v6.5
-Enhanced with Stop Chat, Rename Persistence, Delete, Highlighting
+💎 Crystal Chatbot Backend — v7.0
+Enhanced with Ollama Auto-Check, Stop Chat, Rename Persistence, Delete, Highlighting
 """
 
 import json
 import uuid
 import re
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, AsyncGenerator
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from tinydb import TinyDB, Query
+import shutil
 
-# Try safe import
+# Safe import for Retriever
 try:
     from app.retrieval import Retriever
 except Exception:
@@ -49,7 +51,7 @@ class ChatRequest(BaseModel):
 # =======================================
 # APP + DB
 # =======================================
-app = FastAPI(title="Crystal Chat", version="6.5")
+app = FastAPI(title="Crystal Chat", version="7.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,7 +70,6 @@ print("✅ TinyDB persistence enabled.")
 
 retriever = None
 if Retriever:
-   
     try:
         retriever = Retriever(
             bm25_path="data/idx/bm25.pkl",
@@ -82,8 +83,6 @@ if Retriever:
         print("✅ Retriever initialized.")
     except Exception as e:
         print(f"⚠️ Retriever not loaded: {e}")
-
-        
 
 
 # =======================================
@@ -106,7 +105,6 @@ def save_conversation(conv: dict):
 
 
 def highlight_key_info(text: str) -> str:
-    """Auto-highlight legal references."""
     patterns = {
         r"(Article\s\d+)": r"==\1==",
         r"(Section\s[\dA-Za-z.\-]+)": r"==\1==",
@@ -118,8 +116,29 @@ def highlight_key_info(text: str) -> str:
     return text
 
 
+async def check_ollama_alive(retries: int = 3, delay: float = 1.5) -> bool:
+    """Check if Ollama is reachable before chatting."""
+    for attempt in range(1, retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get(f"{ChatConfig.OLLAMA_BASE_URL}/api/tags")
+                if r.status_code == 200:
+                    return True
+        except Exception:
+            if attempt < retries:
+                print(f"🔁 Retrying Ollama connection ({attempt}/{retries})...")
+                await asyncio.sleep(delay)
+    print("❌ Ollama not reachable. Please start it with `ollama serve`.")
+    return False
+
+
 async def stream_ollama(messages: List[Dict[str, str]], model: str, cid: str):
-    """Stream Ollama chat."""
+    """Stream chat from Ollama with connection guard."""
+    alive = await check_ollama_alive()
+    if not alive:
+        yield f"data: {json.dumps({'error': '⚠️ Ollama not reachable. Please run `ollama serve` and try again.'})}\n\n"
+        return
+
     payload = {
         "model": model,
         "messages": messages,
@@ -128,28 +147,31 @@ async def stream_ollama(messages: List[Dict[str, str]], model: str, cid: str):
     }
 
     async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream(
-            "POST", f"{ChatConfig.OLLAMA_BASE_URL}/api/chat", json=payload
-        ) as resp:
-            if resp.status_code != 200:
-                yield f"data: {json.dumps({'error': 'Ollama connection failed'})}\n\n"
-                return
+        try:
+            async with client.stream(
+                "POST", f"{ChatConfig.OLLAMA_BASE_URL}/api/chat", json=payload
+            ) as resp:
+                if resp.status_code != 200:
+                    yield f"data: {json.dumps({'error': '❌ Ollama API connection failed.'})}\n\n"
+                    return
 
-            async for line in resp.aiter_lines():
-                if stop_sessions.get(cid, False):
-                    yield f"data: {json.dumps({'stopped': True})}\n\n"
-                    break
-                if not line.strip():
-                    continue
-                try:
-                    data = json.loads(line)
-                    if "message" in data and "content" in data["message"]:
-                        yield f"data: {json.dumps({'content': data['message']['content']})}\n\n"
-                    if data.get("done"):
-                        yield f"data: {json.dumps({'done': True})}\n\n"
+                async for line in resp.aiter_lines():
+                    if stop_sessions.get(cid, False):
+                        yield f"data: {json.dumps({'stopped': True})}\n\n"
                         break
-                except:
-                    continue
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                        if "message" in data and "content" in data["message"]:
+                            yield f"data: {json.dumps({'content': data['message']['content']})}\n\n"
+                        if data.get("done"):
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                            break
+                    except:
+                        continue
+        except httpx.ConnectError:
+            yield f"data: {json.dumps({'error': '🚫 Failed to connect to Ollama. Please start it again.'})}\n\n"
 
 
 # =======================================
@@ -195,29 +217,21 @@ async def stop_chat(cid: str):
     stop_sessions[cid] = True
     return {"status": "stopped"}
 
-from fastapi import File, UploadFile, Form
-import shutil, os
 
 @app.post("/upload/pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     """Handles PDF upload and triggers retriever reindex."""
     try:
-        # Ensure folder exists
         raw_pdf_dir = Path("data/raw_pdfs")
         raw_pdf_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build file path
         pdf_path = raw_pdf_dir / file.filename
 
-        # Save the uploaded PDF
         with pdf_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Confirm file actually saved
         if not pdf_path.exists() or pdf_path.stat().st_size == 0:
             raise Exception("File failed to save (empty or missing).")
 
-        # If retriever is initialized, trigger reindex
         if retriever:
             try:
                 print(f"📄 Received PDF: {pdf_path}")
@@ -237,7 +251,6 @@ async def upload_pdf(file: UploadFile = File(...)):
     except Exception as e:
         print(f"❌ Upload error: {e}")
         return {"status": "error", "message": f"Upload failed: {str(e)}"}
-
 
 
 @app.post("/chat/stream")
@@ -261,7 +274,6 @@ async def chat_stream(request: ChatRequest):
 
     ollama_msgs = [system_prompt] + conv["messages"]
 
-    # Retrieval
     sources = []
     if retriever and request.use_documents:
         try:
@@ -306,7 +318,7 @@ async def chat_stream(request: ChatRequest):
 
 
 # =======================================
-# STATIC
+# STATIC UI
 # =======================================
 static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():

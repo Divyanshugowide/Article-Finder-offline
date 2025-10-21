@@ -1,3 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.log
+*.sqlite3
+
+# Environments
+.venv/
+venv/
+env/
+
+# VCS
+.git/
+.gitignore
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project data (exclude large local artifacts)
+data/raw_pdfs/
+data/processed/
+data/idx/
+data/temp/
+*.pdf
+
+# ML caches
+.cache/
+.huggingface/
+transformers_cache/
+
+# IDE
+.vscode/
+.idea/
+
 # Ignore virtual environments
 .venv/
 env/
