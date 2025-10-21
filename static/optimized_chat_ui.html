@@ -414,6 +414,28 @@
                 background-position: 200% 50%;
             }
         }
+        
+        .upload {
+            border: none;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            margin-left: 8px;
+            background: linear-gradient(135deg, #06b6d4, #3b82f6);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.25s ease;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+        }
+        
+        .upload:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.7);
+        }
     </style>
 </head>
 
@@ -440,6 +462,12 @@
         </select>
                 <button id="stopBtn" class="stop"><i class="fas fa-stop"></i></button>
             </div>
+
+            <input type="file" id="pdfUploader" accept="application/pdf" style="display: none;" />
+            <button id="uploadBtn" class="upload">
+  <i class="fas fa-file-upload"></i>
+</button>
+
         </div>
 
         <div id="messages" class="messages"></div>
@@ -735,8 +763,8 @@
     </style>
     <script>
         /* =======================================
-                   🌈 CRYSTAL AI — Rainbow Animated Favicon
-                   ======================================= */
+                                                                   🌈 CRYSTAL AI — Rainbow Animated Favicon
+                                                                   ======================================= */
         (function rainbowFavicon() {
             const faviconURL = "/static/ChatGPT Image Oct 20, 2025, 09_45_27 PM.png";
             const canvas = document.createElement("canvas");
@@ -768,6 +796,54 @@
                 }, 150);
             };
         })();
+
+        // PDF Upload Logic
+        const uploadBtn = document.getElementById("uploadBtn");
+        const pdfUploader = document.getElementById("pdfUploader");
+
+        uploadBtn.onclick = () => pdfUploader.click();
+
+        pdfUploader.addEventListener("change", async(event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const uploadingMsg = addMessage("assistant", `📄 Uploading <b>${file.name}</b>...`);
+
+            try {
+                const res = await fetch("/upload/pdf", {
+                    method: "POST",
+                    body: formData
+                });
+                let data = null;
+
+                try {
+                    data = await res.json();
+                    console.log("📦 Upload response:", data);
+                } catch (e) {
+                    uploadingMsg.innerHTML = `⚠️ Upload failed — invalid server response.`;
+                    return;
+                }
+
+                if (data.status === "success") {
+                    uploadingMsg.innerHTML = `✅ <b>${file.name}</b> added and indexed successfully!`;
+                } else if (data.status === "warning") {
+                    uploadingMsg.innerHTML = `⚠️ <b>${file.name}</b> uploaded, but retriever not active.`;
+                } else if (data.status === "error") {
+                    uploadingMsg.innerHTML = `❌ Upload error: ${data.message}`;
+                } else {
+                    uploadingMsg.innerHTML = `⚠️ Unknown server response. Check console.`;
+                    console.log("⚠️ Unknown data:", data);
+                }
+            } catch (err) {
+                uploadingMsg.innerHTML = `⚠️ Upload failed: ${err.message}`;
+                console.error("Upload error:", err);
+            } finally {
+                pdfUploader.value = "";
+            }
+        });
     </script>
 
 

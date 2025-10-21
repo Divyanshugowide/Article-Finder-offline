@@ -68,6 +68,7 @@ print("✅ TinyDB persistence enabled.")
 
 retriever = None
 if Retriever:
+   
     try:
         retriever = Retriever(
             bm25_path="data/idx/bm25.pkl",
@@ -75,9 +76,14 @@ if Retriever:
             meta_path="data/idx/meta.json",
             alpha=0.45,
         )
+        if not Path("data/idx/bm25.pkl").exists():
+            print("⚠️ No index found. Building from raw_pdfs...")
+            retriever.build_index("data/raw_pdfs")
         print("✅ Retriever initialized.")
     except Exception as e:
         print(f"⚠️ Retriever not loaded: {e}")
+
+        
 
 
 # =======================================
@@ -188,6 +194,50 @@ async def delete_conversation(cid: str):
 async def stop_chat(cid: str):
     stop_sessions[cid] = True
     return {"status": "stopped"}
+
+from fastapi import File, UploadFile, Form
+import shutil, os
+
+@app.post("/upload/pdf")
+async def upload_pdf(file: UploadFile = File(...)):
+    """Handles PDF upload and triggers retriever reindex."""
+    try:
+        # Ensure folder exists
+        raw_pdf_dir = Path("data/raw_pdfs")
+        raw_pdf_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build file path
+        pdf_path = raw_pdf_dir / file.filename
+
+        # Save the uploaded PDF
+        with pdf_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Confirm file actually saved
+        if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+            raise Exception("File failed to save (empty or missing).")
+
+        # If retriever is initialized, trigger reindex
+        if retriever:
+            try:
+                print(f"📄 Received PDF: {pdf_path}")
+                if hasattr(retriever, "index_pdfs"):
+                    retriever.index_pdfs(str(raw_pdf_dir))
+                elif hasattr(retriever, "build_index"):
+                    retriever.build_index(str(raw_pdf_dir))
+                print(f"✅ Indexing done for {pdf_path.name}")
+                return {"status": "success", "message": f"{pdf_path.name} uploaded and indexed successfully!"}
+            except Exception as e:
+                print(f"⚠️ Indexing failed: {e}")
+                return {"status": "error", "message": f"File uploaded but indexing failed: {e}"}
+        else:
+            print("⚠️ Retriever not initialized.")
+            return {"status": "warning", "message": f"{pdf_path.name} uploaded, but retriever inactive."}
+
+    except Exception as e:
+        print(f"❌ Upload error: {e}")
+        return {"status": "error", "message": f"Upload failed: {str(e)}"}
+
 
 
 @app.post("/chat/stream")
